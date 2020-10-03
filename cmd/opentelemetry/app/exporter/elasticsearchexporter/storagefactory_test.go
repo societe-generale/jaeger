@@ -118,7 +118,7 @@ func TestFactoryCreateArchiveSpanWriter(t *testing.T) {
 }
 
 func TestSingleSpanWriter(t *testing.T) {
-	converter := dbmodel.NewFromDomain(false, []string{}, "@")
+	converter := dbmodel.NewFromDomain(false, []string{}, "@",zap.NewNop())
 	mw := &mockWriter{}
 	w := singleSpanWriter{
 		writer:    mw,
@@ -133,6 +133,24 @@ func TestSingleSpanWriter(t *testing.T) {
 	dbSpan := converter.FromDomainEmbedProcess(s)
 	assert.Equal(t, []*dbmodel.Span{dbSpan}, mw.spans)
 }
+
+func TestWriterWithoutProcessField(t *testing.T) {
+	converter := dbmodel.NewFromDomain(false, []string{}, "@",zap.L())
+	mw := &mockWriter{}
+	w := singleSpanWriter{
+		writer:    mw,
+		converter: converter,
+	}
+	s := &model.Span{
+		OperationName: "foo",
+		Process:       nil,
+	}
+	err := w.WriteSpan(context.Background(), s)
+	require.NoError(t, err)
+	dbSpan := converter.FromDomainEmbedProcess(s)
+	assert.Equal(t, []*dbmodel.Span{dbSpan}, mw.spans)
+}
+
 
 type mockWriter struct {
 	spans []*dbmodel.Span
