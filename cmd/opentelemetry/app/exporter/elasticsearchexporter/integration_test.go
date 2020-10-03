@@ -109,7 +109,7 @@ func (s *IntegrationTest) initSpanstore(allTagsAsFields bool) error {
 	}
 	s.SpanWriter = singleSpanWriter{
 		writer:    w,
-		converter: dbmodel.NewFromDomain(allTagsAsFields, []string{}, tagKeyDeDotChar),
+		converter: dbmodel.NewFromDomain(allTagsAsFields, []string{}, tagKeyDeDotChar, nil),
 	}
 
 	elasticsearchClient, err := esclient.NewElasticsearchClient(cfg, s.logger)

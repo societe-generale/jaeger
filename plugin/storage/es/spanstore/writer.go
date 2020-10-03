@@ -81,7 +81,7 @@ func NewSpanWriter(p SpanWriterParams) *SpanWriter {
 				TTL: 48 * time.Hour,
 			},
 		),
-		spanConverter:    dbmodel.NewFromDomain(p.AllTagsAsFields, p.TagKeysAsFields, p.TagDotReplacement),
+		spanConverter:    dbmodel.NewFromDomain(p.AllTagsAsFields, p.TagKeysAsFields, p.TagDotReplacement, p.Logger),
 		spanServiceIndex: getSpanAndServiceIndexFn(p.Archive, p.UseReadWriteAliases, p.IndexPrefix),
 	}
 }

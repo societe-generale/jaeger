@@ -72,7 +72,7 @@ func (s *StorageFactory) CreateSpanWriter() (spanstore.Writer, error) {
 		return nil, err
 	}
 	return &singleSpanWriter{
-		converter: dbmodel.NewFromDomain(cfg.GetAllTagsAsFields(), fields, cfg.GetTagDotReplacement()),
+		converter: dbmodel.NewFromDomain(cfg.GetAllTagsAsFields(), fields, cfg.GetTagDotReplacement(), s.logger),
 		writer:    writer,
 	}, nil
 }
@@ -133,7 +133,7 @@ func (s *StorageFactory) CreateArchiveSpanWriter() (spanstore.Writer, error) {
 		return nil, err
 	}
 	return &singleSpanWriter{
-		converter: dbmodel.NewFromDomain(cfg.GetAllTagsAsFields(), fields, cfg.GetTagDotReplacement()),
+		converter: dbmodel.NewFromDomain(cfg.GetAllTagsAsFields(), fields, cfg.GetTagDotReplacement(),s.logger),
 		writer:    writer,
 	}, nil
 }

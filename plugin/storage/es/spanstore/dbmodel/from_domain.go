@@ -16,18 +16,19 @@
 package dbmodel
 
 import (
+	"fmt"
 	"strings"
-
+	"go.uber.org/zap"
 	"github.com/jaegertracing/jaeger/model"
 )
 
 // NewFromDomain creates FromDomain used to convert model span to db span
-func NewFromDomain(allTagsAsObject bool, tagKeysAsFields []string, tagDotReplacement string) FromDomain {
+func NewFromDomain(allTagsAsObject bool, tagKeysAsFields []string, tagDotReplacement string, logger *zap.Logger) FromDomain {
 	tags := map[string]bool{}
 	for _, k := range tagKeysAsFields {
 		tags[k] = true
 	}
-	return FromDomain{allTagsAsFields: allTagsAsObject, tagKeysAsFields: tags, tagDotReplacement: tagDotReplacement}
+	return FromDomain{allTagsAsFields: allTagsAsObject, tagKeysAsFields: tags, tagDotReplacement: tagDotReplacement, logger: logger}
 }
 
 // FromDomain is used to convert model span to db span
@@ -35,6 +36,7 @@ type FromDomain struct {
 	allTagsAsFields   bool
 	tagKeysAsFields   map[string]bool
 	tagDotReplacement string
+	logger *zap.Logger
 }
 
 // FromDomainEmbedProcess converts model.Span into json.Span format.
@@ -43,8 +45,8 @@ func (fd FromDomain) FromDomainEmbedProcess(span *model.Span) *Span {
 	return fd.convertSpanEmbedProcess(span)
 }
 
-func (fd FromDomain) convertSpanInternal(span *model.Span) Span {
-	tags, tagsMap := fd.convertKeyValuesString(span.Tags)
+func (fd FromDomain) convertSpanInternal(span *model.Span) (Span,[]string) {
+	tags, tagsMap,errors := fd.convertKeyValuesString(span.Tags)
 	return Span{
 		TraceID:         TraceID(span.TraceID.String()),
 		SpanID:          SpanID(span.SpanID.String()),
@@ -56,13 +58,28 @@ func (fd FromDomain) convertSpanInternal(span *model.Span) Span {
 		Tags:            tags,
 		Tag:             tagsMap,
 		Logs:            fd.convertLogs(span.Logs),
-	}
+	},errors
 }
 
 func (fd FromDomain) convertSpanEmbedProcess(span *model.Span) *Span {
-	s := fd.convertSpanInternal(span)
-	s.Process = fd.convertProcess(span.Process)
+	s,tagErrors := fd.convertSpanInternal(span)
+	process,processErrors := fd.convertProcess(span.Process)
+	s.Process = process
 	s.References = fd.convertReferences(span)
+	if len(tagErrors) > 0 || len(processErrors) > 0 {
+		fields := []zap.Field{
+			zap.String("trace_id", span.TraceID.String()),
+			zap.String("span_id", span.SpanID.String()),
+			zap.String("operation_name", span.OperationName),
+			zap.String("tags", fmt.Sprintf("%+v", span.Tags)),
+		}
+		if span.Process != nil {
+			fields = append(fields, zap.String("processTags",fmt.Sprintf("%+v", span.Process)))
+		}else{
+			fields = append(fields, zap.String("processTags","nil"))
+		}
+		fd.logger.Error(fmt.Sprintf("Key value tag conversion error on tags %+v, on process tags %+v", tagErrors, processErrors),fields...)
+	}
 	return &s
 }
 
@@ -85,15 +102,20 @@ func (fd FromDomain) convertRefType(refType model.SpanRefType) ReferenceType {
 	return ChildOf
 }
 
-func (fd FromDomain) convertKeyValuesString(keyValues model.KeyValues) ([]KeyValue, map[string]interface{}) {
+func (fd FromDomain) convertKeyValuesString(keyValues model.KeyValues) ([]KeyValue, map[string]interface{},[]string) {
 	var tagsMap map[string]interface{}
 	var kvs []KeyValue
+	var errors []string
 	for _, kv := range keyValues {
 		if kv.GetVType() != model.BinaryType && (fd.allTagsAsFields || fd.tagKeysAsFields[kv.Key]) {
 			if tagsMap == nil {
 				tagsMap = map[string]interface{}{}
 			}
-			tagsMap[strings.Replace(kv.Key, ".", fd.tagDotReplacement, -1)] = kv.Value()
+			if &kv == nil || &kv.Key == nil {
+				errors = append(errors, fmt.Sprintf("Error in extracting Key Value +%v", kv))
+			}else{
+				tagsMap[strings.Replace(kv.Key, ".", fd.tagDotReplacement, -1)] = kv.Value()
+			}
 		} else {
 			kvs = append(kvs, convertKeyValue(kv))
 		}
@@ -101,7 +123,7 @@ func (fd FromDomain) convertKeyValuesString(keyValues model.KeyValues) ([]KeyVal
 	if kvs == nil {
 		kvs = make([]KeyValue, 0)
 	}
-	return kvs, tagsMap
+	return kvs, tagsMap, errors
 }
 
 func (fd FromDomain) convertLogs(logs []model.Log) []Log {
@@ -119,13 +141,13 @@ func (fd FromDomain) convertLogs(logs []model.Log) []Log {
 	return out
 }
 
-func (fd FromDomain) convertProcess(process *model.Process) Process {
-	tags, tagsMap := fd.convertKeyValuesString(process.Tags)
+func (fd FromDomain) convertProcess(process *model.Process) (Process,[]string) {
+	tags, tagsMap, errors := fd.convertKeyValuesString(process.Tags)
 	return Process{
 		ServiceName: process.ServiceName,
 		Tags:        tags,
 		Tag:         tagsMap,
-	}
+	}, errors
 }
 
 func convertKeyValue(kv model.KeyValue) KeyValue {
